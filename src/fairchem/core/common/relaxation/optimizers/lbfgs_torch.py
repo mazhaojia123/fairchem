@@ -94,7 +94,7 @@ class LBFGS:
             forces=None, fmax=self.fmax, max_forces=max_forces
         ):
             logging.info(
-                f"{iteration} " + " ".join(f"{x:0.3f}" for x in max_forces.tolist())
+                f"{iteration} " + " ".join(f"{x:18.15g}" for x in max_forces.tolist())
             )
 
             if self.trajectories is not None and (
@@ -140,7 +140,8 @@ class LBFGS:
         )
         longest_steps = longest_steps[self.optimizable.batch_indices]
         maxstep = longest_steps.new_tensor(self.maxstep)
-        scale = (longest_steps + 1e-7).reciprocal() * torch.min(longest_steps, maxstep)
+        # scale = (longest_steps + 1e-7).reciprocal() * torch.min(longest_steps, maxstep)
+        scale = (longest_steps).reciprocal() * torch.min(longest_steps, maxstep)
         dr *= scale.unsqueeze(1)
         return dr * self.damping
 

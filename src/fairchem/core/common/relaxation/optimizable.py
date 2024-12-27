@@ -20,6 +20,8 @@ from ase.stress import voigt_6_to_full_3x3_stress
 from torch_scatter import scatter
 
 from fairchem.core.common.relaxation.ase_utils import batch_to_atoms
+from mace.tools.torch_geometric.batch import Batch as ConfigBatch
+from mace.calculators import MACECalculator
 
 # this can be removed after pinning ASE dependency >= 3.23
 try:
@@ -98,11 +100,12 @@ class OptimizableBatch(Optimizable):
     def __init__(
         self,
         batch: Batch,
-        trainer: BaseTrainer,
+        trainer: BaseTrainer | MACECalculator,
         transform: torch.nn.Module | None = None,
         mask_converged: bool = True,
         numpy: bool = False,
         masked_eps: float = 1e-8,
+        config_batch: ConfigBatch | None = None,
     ):
         """Initialize Optimizable Batch
 
@@ -125,6 +128,7 @@ class OptimizableBatch(Optimizable):
         self.torch_results = {}
         self.results = {}
         self._eps = masked_eps
+        self.config_batch = config_batch
 
         self.otf_graph = True  # trainer._unwrapped_model.otf_graph
         if not self.otf_graph and "edge_index" not in self.batch:
@@ -164,9 +168,12 @@ class OptimizableBatch(Optimizable):
         """Run prediction if batch has any changes."""
         system_changes = self.check_state(self.batch)
         if len(system_changes) > 0:
-            self.torch_results = self.trainer.predict(
-                self.batch, per_image=False, disable_tqdm=True
-            )
+            if isinstance(self.trainer, MACECalculator):
+                self.torch_results = self.trainer.predict(self.config_batch)
+            else:
+                self.torch_results = self.trainer.predict(
+                    self.batch, per_image=False, disable_tqdm=True
+                )
             # save only subset of props in simple namespace instead of cloning the whole batch to save memory
             changes = ALL_CHANGES - set(self.ignored_changes)
             self._cached_batch = SimpleNamespace(
@@ -204,11 +211,18 @@ class OptimizableBatch(Optimizable):
         if isinstance(positions, np.ndarray):
             positions = torch.tensor(positions)
 
-        positions = positions.to(dtype=torch.float32, device=self.device)
         if self.mask_converged and self._update_mask is not None:
             mask = self.update_mask[self.batch.batch]
+            if self.config_batch is not None:
+                self.config_batch.positions.requires_grad=False
+                self.config_batch.positions[mask] = positions[mask]
+            # positions = positions.to(dtype=torch.float32, device=self.device)
             self.batch.pos[mask] = positions[mask]
         else:
+            if self.config_batch is not None:
+                self.config_batch.positions.requires_grad=False
+                self.config_batch.positions = positions
+            # positions = positions.to(dtype=torch.float32, device=self.device)
             self.batch.pos = positions
 
         if not self.otf_graph:
@@ -254,6 +268,7 @@ class OptimizableBatch(Optimizable):
             cells = torch.tensor(cells, dtype=torch.float32, device=self.device)
         cells = cells.to(dtype=torch.float32, device=self.device)
         self.batch.cell[self.update_mask] = cells[self.update_mask]
+        self.config_batch.cell[self.update_mask] = cells[self.update_mask].reshape(-1, 3)
 
     def get_volumes(self) -> torch.Tensor:
         """Get a tensor of volumes for each cell in batch"""
