@@ -129,6 +129,8 @@ class LBFGS:
         for name, value in self.optimizable.results.items():
             setattr(self.optimizable.batch, name, value)
 
+        self.nsteps = iteration
+
         return self.optimizable.converged(
             forces=None, fmax=self.fmax, max_forces=max_forces
         )
