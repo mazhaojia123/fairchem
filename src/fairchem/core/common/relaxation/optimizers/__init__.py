@@ -8,5 +8,6 @@ LICENSE file in the root directory of this source tree.
 from __future__ import annotations
 
 from .lbfgs_torch import LBFGS
+from .bfgslinesearch_torch import BFGSLineSearch
 
-__all__ = ["LBFGS"]
+__all__ = ["LBFGS", "BFGSLineSearch"]
