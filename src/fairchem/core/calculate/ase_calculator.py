@@ -174,6 +174,12 @@ class FAIRChemCalculator(Calculator):
             state.append("info")
         return state
 
+    def predict(
+        self, atoms_list
+    ): 
+        #TODO:
+        pass
+
     def calculate(
         self, atoms: Atoms, properties: list[str], system_changes: list[str]
     ) -> None:
