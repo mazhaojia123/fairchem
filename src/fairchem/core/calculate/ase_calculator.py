@@ -13,6 +13,7 @@ from functools import partial
 from typing import TYPE_CHECKING, Literal
 
 import numpy as np
+import torch
 from ase.calculators.calculator import Calculator
 from ase.stress import full_3x3_to_voigt_6_stress
 
@@ -40,6 +41,7 @@ class FAIRChemCalculator(Calculator):
         self,
         predict_unit: MLIPPredictUnit,
         task_name: UMATask | str | None = None,
+        device: str | None = None,
         seed: int = 41,
     ):
         """
@@ -109,6 +111,9 @@ class FAIRChemCalculator(Calculator):
             r_data_keys=["spin", "charge"],
         )
 
+        # self.device = self.predictor.device
+        self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
+
     @classmethod
     def from_model_checkpoint(
         cls,
@@ -175,10 +180,70 @@ class FAIRChemCalculator(Calculator):
         return state
 
     def predict(
-        self, atoms_list
+        self, 
+        atoms_list: list
     ): 
         #TODO:
-        pass
+        if not atoms_list:
+            raise ValueError("Empty atoms_list provided")
+        
+        # raise NotImplementedError("Not Implemented.")
+        graph_list = []
+        for atoms in atoms_list: 
+            # Our calculators won't work if natoms=0
+            if len(atoms) == 0:
+                raise ValueError("Atoms object has no atoms inside.")
+
+            # Check if the atoms object has periodic boundary conditions (PBC) set correctly
+            self._check_atoms_pbc(atoms)
+
+            # Validate that charge/spin are set correctly for omol, or default to 0 otherwise
+            self._validate_charge_and_spin(atoms)
+
+            # Standard call to check system_changes etc
+            # Calculator.calculate(self, atoms, properties, system_changes)
+
+            # Convert using the current a2g object
+            data_object = self.a2g(atoms)
+
+            graph_list.append(data_object)
+
+        # Batch and predict
+        batch = data_list_collater(graph_list, otf_graph=True)
+        # logging.warning(f"batch: {batch}")
+        pred = self.predictor.predict(batch)
+        # logging.warning(f"pred: {pred}")
+
+        # # Collect the results into self.results
+        # self.results = {}
+        # for calc_key in self.implemented_properties:
+        #     if calc_key == "energy":
+        #         energy = float(pred[calc_key].detach().cpu().numpy()[0])
+
+        #         self.results["energy"] = self.results["free_energy"] = (
+        #             energy  # Free energy is a copy of energy
+        #         )
+        #     if calc_key == "forces":
+        #         forces = pred[calc_key].detach().cpu().numpy()
+        #         self.results["forces"] = forces
+        #     if calc_key == "stress":
+        #         stress = pred[calc_key].detach().cpu().numpy().reshape(3, 3)
+        #         logging.warning(f"stress: {stress}")
+        #         stress_voigt = full_3x3_to_voigt_6_stress(stress)
+        #         logging.warning(f"stress_voigt: {stress_voigt}")
+        #         self.results["stress"] = stress_voigt
+
+        predictions = {}
+        predictions["energy"] = pred["energy"].unsqueeze(-1).detach().to(torch.float64)
+        predictions["forces"] = pred["forces"].detach().to(torch.float64)
+        predictions["stress"] = pred["stress"].view(-1, 3, 3).detach().to(torch.float64)
+        
+        # logging.warning(f"predictions[energy]: {predictions['energy']}")
+        # logging.warning(f"predictions[forces]: {predictions['forces']}")
+        # logging.warning(f"predictions[stress]: {predictions['stress']}")
+
+        return predictions 
+
 
     def calculate(
         self, atoms: Atoms, properties: list[str], system_changes: list[str]

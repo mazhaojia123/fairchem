@@ -114,9 +114,10 @@ class MLIPPredictUnit(PredictUnit[AtomicData]):
         assert set(self.datasets) == set(
             self.dataset_to_tasks.keys()
         ), "Found mismatch between datasets in backbone and datsets in Tasks"
-        assert device in ["cpu", "cuda"], "device must be either 'cpu' or 'cuda'"
+        # assert device in ["cpu", "cuda"], "device must be either 'cpu' or 'cuda'"
 
-        self.device = get_device_for_local_rank() if device == "cuda" else "cpu"
+        # self.device = get_device_for_local_rank() if device == "cuda" else "cpu"
+        self.device = device
 
         self.model.eval()
 
